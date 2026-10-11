@@ -1,49 +1,71 @@
-"use client";
+'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function HistoryPage() {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ดึงข้อมูลประวัติการขายเมื่อโหลดหน้าเว็บ
   useEffect(() => {
     fetchSales();
   }, []);
 
-  const fetchSales = async () => {
-    setLoading(true);
-    // ดึงข้อมูลจากตาราง sales และเรียงจากล่าสุดไปเก่าสุด
-    const { data, error } = await supabase
-      .from('sales')
-      .select('*')
-      .order('sold_at', { ascending: false });
+  async function fetchSales() {
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select('*')
+        .order('sold_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching sales:', error);
-    } else {
-      setSales(data);
+      if (error) throw error;
+      setSales(data || []);
+    } catch (error) {
+      console.error('Error fetching sales:', error.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }
 
-  // คำนวณยอดขายรวมทั้งหมดจากข้อมูลใน state
-  const grandTotal = sales.reduce((sum, sale) => sum + Number(sale.total_price), 0);
-
-  // ฟังก์ชันจัดรูปแบบวันเวลาให้อ่านง่าย
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleString('th-TH', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const totalRevenue = sales.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
   return (
-    <div>
+    <div style={{ padding: '1rem' }}>
       <h2 style={{ marginBottom: '1rem' }}>ประวัติการขาย</h2>
+      
+      <div style={{ padding: '1rem', background: '#f4f4f5', borderRadius: '8px', marginBottom: '1rem' }}>
+        <strong>ยอดขายรวมทั้งหมด: </strong>
+        <span style={{ fontSize: '1.25rem', color: '#16a34a' }}>
+          ฿{totalRevenue.toLocaleString()}
+        </span>
+      </div>
+
+      {loading ? (
+        <p>กำลังโหลดข้อมูล...</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '8px' }}>วันเวลาที่ขาย</th>
+              <th style={{ padding: '8px' }}>ชื่อสินค้า</th>
+              <th style={{ padding: '8px' }}>จำนวน</th>
+              <th style={{ padding: '8px' }}>ยอดรวม</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sales.map((item) => (
+              <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '8px' }}>
+                  {new Date(item.sold_at).toLocaleString('th-TH')}
+                </td>
+                <td style={{ padding: '8px' }}>{item.product_name}</td>
+                <td style={{ padding: '8px' }}>{item.quantity}</td>
+                <td style={{ padding: '8px' }}>฿{Number(item.total_price).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
