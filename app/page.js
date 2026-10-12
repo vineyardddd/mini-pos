@@ -1,36 +1,179 @@
-ช่วยอัปเดตระบบขายสินค้า (POS) ในไฟล์ `app/sell/page.js` ของ Next.js (App Router) ที่ตัดสต๊อกใน Supabase ให้เพิ่มระบบแจ้งเตือนเข้า Telegram Channel อัตโนมัติหลังจากตัดสต๊อกสำเร็จ
+"use client";
 
-ความต้องการ:
-1. ดึงค่า Telegram Config จาก Environment Variables:
-   - process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN
-   - process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
-2. งานที่ 1: แจ้งเตือน Order เข้า (New Order Alert)
-   - เมื่อกดขายสำเร็จ ให้ส่งข้อความแจ้งเตือนรูปแบบ HTML เข้า Telegram Channel โดยแสดงข้อมูลดังนี้:
-     🛍️ <b>มีรายการขายใหม่!</b>
-     - สินค้า: [ชื่อสินค้า]
-     - จำนวน: [จำนวนที่ขาย] ชิ้น
-     - ราคารวม: [ราคารวม] บาท
-     - สต๊อกคงเหลือปัจจุบัน: [สต๊อกหลังตัด] ชิ้น
-     - เวลา: [เวลาปัจจุบัน]
+export default function SellPage() {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-3. งานที่ 2: แจ้งเตือน Stock เหลือน้อย (Low Stock Alert)
-   - ตั้งเกณฑ์เตือนภัยไว้ที่สต๊อกเหลือน้อยกว่าหรือเท่ากับ 5 ชิ้น (Stock <= 5)
-   - ถ้าหลังตัดสต๊อกแล้ว สินค้านั้นเหลือน้อยกว่าหรือเท่ากับ 5 ชิ้น ให้ยิงข้อความแจ้งเตือนเตือนภัยแยกอีก 1 ข้อความทันที:
-     🚨 <b>[เตือนภัย] สต๊อกสินค้าใกล้หมด!</b>
-     - สินค้า: [ชื่อสินค้า]
-     - คงเหลือเพียง: [สต๊อกหลังตัด] ชิ้น
-     ⚠️ กรุณาเติมสต๊อกสินค้าด่วน!
+  // State สำหรับฟอร์มขาย
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [quantity, setQuantity] = useState(1);
 
-4. การส่ง Telegram API ให้ใช้ `fetch` ยิงไปยัง URL:
-   `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`
-   โดยส่ง payload รูปแบบ JSON:
-   {
-     "chat_id": TELEGRAM_CHAT_ID,
-     "text": messageText,
-     "parse_mode": "HTML"
-   }
+  // ดึงค่า Telegram Config จาก Environment Variables
+  const TELEGRAM_BOT_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
+  const TELEGRAM_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID;
 
-5. โครงสร้างการทำงาน:
-   - ต้องแน่ใจว่าการส่ง Telegram Notification ทำงานแบบ async/try-catch และไม่ส่งผลกระทบให้ระบบขายขัดข้อง หากการยิง Telegram API มีปัญหา ให้แจ้งเตือนขายสำเร็จในเว็บได้ตามปกติ
-   - สรุปโค้ดส่วนที่เพิ่ม/แก้ไขให้อย่างชัดเจน
+  // ดึงรายการสินค้าเมื่อโหลดหน้า
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching products:', error);
+    } else {
+      setProducts(data);
+    }
+    setLoading(false);
+  };
+
+  const selectedProduct = products.find(p => p.id === selectedProductId);
+  const totalPrice = selectedProduct ? selectedProduct.price * quantity : 0;
+
+  // ฟังก์ชันส่งข้อความเข้า Telegram
+  const sendTelegramMessage = async (messageText) => {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+      console.warn('ยังไม่ได้ตั้งค่า Telegram Token หรือ Chat ID');
+      return;
+    }
+
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: messageText,
+          parse_mode: 'HTML',
+        }),
+      });
+    } catch (error) {
+      console.error('ส่งแจ้งเตือน Telegram ไม่สำเร็จ:', error);
+    }
+  };
+
+  // ฟังก์ชันจัดการการขายสินค้า
+  const handleSell = async (e) => {
+    e.preventDefault();
+
+    if (!selectedProduct) {
+      alert('กรุณาเลือกสินค้า');
+      return;
+    }
+
+    if (quantity <= 0) {
+      alert('จำนวนต้องมากกว่า 0');
+      return;
+    }
+
+    const sellQuantity = parseInt(quantity, 10);
+
+    // 1. ตรวจสอบ stock
+    if (sellQuantity > selectedProduct.stock) {
+      alert(`สินค้าในสต๊อกไม่เพียงพอ (เหลือ ${selectedProduct.stock} ${selectedProduct.unit})`);
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      // 2. บันทึกประวัติการขายลงตาราง sales
+      const { error: saleError } = await supabase.from('sales').insert([{
+        product_id: selectedProduct.id,
+        product_name: selectedProduct.name,
+        quantity: sellQuantity,
+        total_price: totalPrice,
+        sold_at: new Date().toISOString()
+      }]);
+
+      if (saleError) throw saleError;
+
+      // 3. อัปเดตตัดสต๊อกในตาราง products
+      const newStock = selectedProduct.stock - sellQuantity;
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({ stock: newStock })
+        .eq('id', selectedProduct.id);
+
+      if (updateError) throw updateError;
+
+      // ==========================================
+      // 4. แจ้งเตือน Telegram (ทำงานแบบแยกส่วน ไม่กระทบระบบหลัก)
+      // ==========================================
+      try {
+        const currentTime = new Date().toLocaleString('th-TH', { 
+          dateStyle: 'medium', 
+          timeStyle: 'short' 
+        });
+
+        // งานที่ 1: แจ้งเตือน Order เข้า
+        const orderMessage = `🛍️ <b>มีรายการขายใหม่!</b>\n` +
+          `- สินค้า: ${selectedProduct.name}\n` +
+          `- จำนวน: ${sellQuantity} ชิ้น\n` +
+          `- ราคารวม: ${totalPrice.toLocaleString()} บาท\n` +
+          `- สต๊อกคงเหลือปัจจุบัน: ${newStock} ชิ้น\n` +
+          `- เวลา: ${currentTime}`;
+        
+        // ใช้ .catch() ห้อยไว้เพื่อให้รันเบื้องหลังโดยไม่หยุดการทำงานหลัก
+        sendTelegramMessage(orderMessage).catch(console.error);
+
+        // งานที่ 2: แจ้งเตือน Stock เหลือน้อย (<= 5)
+        if (newStock <= 5) {
+          const warningMessage = `🚨 <b>[เตือนภัย] สต๊อกสินค้าใกล้หมด!</b>\n` +
+            `- สินค้า: ${selectedProduct.name}\n` +
+            `- คงเหลือเพียง: ${newStock} ชิ้น\n` +
+            `⚠️ กรุณาเติมสต๊อกสินค้าด่วน!`;
+            
+          sendTelegramMessage(warningMessage).catch(console.error);
+        }
+      } catch (tgError) {
+        console.error('เกิดข้อผิดพลาดในการเตรียมข้อความ Telegram:', tgError);
+      }
+      // ==========================================
+
+      // 5. แสดงข้อความสำเร็จและรีเซ็ตฟอร์ม
+      alert('บันทึกการขายสำเร็จ!');
+      setSelectedProductId('');
+      setQuantity(1);
+      
+      // ดึงข้อมูลสินค้าใหม่เพื่ออัปเดตสต๊อกในหน้าจอ
+      fetchProducts();
+
+    } catch (error) {
+      alert('เกิดข้อผิดพลาด: ' + error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: '1rem' }}>ทำรายการขาย</h2>
+
+      <div style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto' }}>
+        {loading ? (
+          <p>กำลังโหลดรายการสินค้า...</p>
+        ) : (
+          <form onSubmit={handleSell} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            {/* เลือกสินค้า */}
+            <div>
+              <label style={labelStyle}>เลือกสินค้า</label>
+              <select 
+                value={selectedProductId} 
+                onChange={e => setSelectedProductId(e.target.value)} 
+                required 
+                style={inputStyle}
+              >
+                <option value="">-- กรุณา
