@@ -176,4 +176,78 @@ export default function SellPage() {
                 required 
                 style={inputStyle}
               >
-                <option value="">-- กรุณา
+                <option value="">-- กรุณาเลือกสินค้า --</option>
+                {products.map(product => (
+                  <option key={product.id} value={product.id} disabled={product.stock === 0}>
+                    {product.name} - ราคา {Number(product.price).toLocaleString()} บาท (เหลือ {product.stock} {product.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* ระบุจำนวน */}
+            <div>
+              <label style={labelStyle}>จำนวน</label>
+              <input 
+                type="number" 
+                value={quantity} 
+                onChange={e => setQuantity(e.target.value)} 
+                required 
+                min="1"
+                style={inputStyle} 
+              />
+            </div>
+
+            {/* สรุปยอดรวม */}
+            <div style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '6px', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                <span>ยอดรวมทั้งสิ้น:</span>
+                <span style={{ color: '#2563eb' }}>{totalPrice.toLocaleString()} บาท</span>
+              </div>
+            </div>
+
+            {/* ปุ่มยืนยัน */}
+            <button 
+              type="submit" 
+              disabled={submitting || !selectedProductId} 
+              style={{ 
+                ...btnStyle, 
+                backgroundColor: (submitting || !selectedProductId) ? '#9ca3af' : '#2563eb',
+                cursor: (submitting || !selectedProductId) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {submitting ? 'กำลังบันทึก...' : 'ยืนยันการขาย'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Inline Styles
+const labelStyle = {
+  display: 'block',
+  marginBottom: '0.5rem',
+  fontWeight: '600',
+  color: '#374151'
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '10px',
+  border: '1px solid #d1d5db',
+  borderRadius: '4px',
+  fontSize: '1rem',
+  boxSizing: 'border-box'
+};
+
+const btnStyle = {
+  color: 'white',
+  border: 'none',
+  borderRadius: '4px',
+  padding: '12px 24px',
+  fontSize: '1.1rem',
+  fontWeight: '600',
+  marginTop: '1rem'
+};
